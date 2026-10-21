@@ -1,5 +1,7 @@
 # Online Retail Customer Segmentation
 
+[## **Check the app live here**](https://lxeukmyjmsndninrybublb.streamlit.app/)
+
 This project segments online retail customers by purchase behavior with K-Means, using exploratory notebooks, a reusable pipeline, MLflow tracking, and a Streamlit dashboard.
 
 ## Features
