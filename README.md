@@ -44,6 +44,22 @@ streamlit run app.py
 
 Training registers `customer-kmeans` with the `current` alias. Inference loads it and writes assignments to `outputs/customer_clusters.csv`, which the dashboard reads by default. A different predictions CSV can be uploaded in the sidebar.
 
+## AI Cluster Explanations
+
+The dashboard can generate concise English descriptions of each cluster using Anthropic's Claude API. It reads both the API key and model from Streamlit secrets and caches explanations for identical cluster profiles and model settings.
+
+For local development, create a `.streamlit` folder in the repository root if it does not exist, then create `.streamlit/secrets.toml` inside it. Add your Anthropic credentials and the model ID to that file:
+
+```toml
+[anthropic]
+api_key = "your-anthropic-api-key"
+model = "claude-sonnet-5"
+```
+
+Streamlit reads this file automatically when you run `streamlit run app.py` from the repository root. Replace the placeholder with your own API key; `model` must contain a model ID enabled for your Anthropic account. The repository `.gitignore` excludes `.streamlit/secrets.toml`, so do not force-add or commit it.
+
+For Streamlit Community Cloud, open the deployed app's settings, select **Secrets**, and paste the same TOML content there. Cloud secrets are configured in the app settings and should not be committed to the repository. Without a configured key or when the API is unavailable, the dashboard still displays customer results without AI tooltips.
+
 ## MLflow and Results
 
 MLflow creates or reuses the `customer-segmentation-training` and `customer-segmentation-inference` experiments. Tracking metadata defaults to the project-root `mlflow.db` SQLite database, with artifacts stored locally. Set `MLFLOW_TRACKING_URI` to use another tracking store.
@@ -56,10 +72,11 @@ Recency uses the latest valid invoice date in each input batch. When comparing s
 
 ```text
 app.py                 Streamlit results dashboard
-src/                   Data, model, MLflow tracking, training, and inference modules
+src/                   Data, model, MLflow tracking, training, inference, and AI explanation modules
 data/                  Online Retail source workbook
 eda/                   Exploratory data analysis notebook
 experiments/           Rule-based and K-Means notebooks
+tests/                 Deterministic unit tests
 AGENTS.md              Contributor guidelines
 ```
 

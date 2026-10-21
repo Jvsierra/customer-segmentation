@@ -26,7 +26,7 @@ Use four spaces for indentation, `snake_case` for functions and variables, and d
 
 ## Testing Guidelines
 
-There is currently no test directory, configured test framework, or coverage threshold. For changes to data or model behavior, validate the relevant command end to end and check the produced CSV or MLflow run. For dashboard changes, launch the app and confirm that the default and uploaded CSV paths render. If adding automated tests, place them in `tests/` with `test_*.py` names and keep fixtures small and deterministic.
+Use the standard-library `unittest` framework for automated tests in `tests/`, named `test_*.py`. Run them with `python -m unittest discover -s tests`; there is no coverage threshold. For changes to data or model behavior, validate the relevant command end to end and check the produced CSV or MLflow run. For dashboard changes, launch the app and confirm that the default and uploaded CSV paths render.
 
 ## Commit & Pull Request Guidelines
 
@@ -34,4 +34,4 @@ Recent commits use short imperative subjects such as `Add Streamlit dashboard wi
 
 ## Data & Configuration
 
-Do not commit customer-level exports, database files, credentials, or generated model artifacts. Keep paths configurable and avoid embedding private tracking-server credentials in source files.
+Do not commit customer-level exports, database files, credentials, or generated model artifacts. Keep paths configurable and avoid embedding private tracking-server credentials in source files. For local Anthropic credentials, use `.streamlit/secrets.toml` with an `[anthropic]` section containing `api_key` and `model`; this file is ignored by Git. Configure the same values in Streamlit Community Cloud's Secrets settings for deployment.

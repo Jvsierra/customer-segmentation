@@ -1,10 +1,15 @@
 """Streamlit dashboard for customer segmentation results."""
 
 from io import BytesIO
+from collections.abc import Mapping
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from st_aggrid import AgGrid, GridOptionsBuilder
+from streamlit.errors import StreamlitSecretNotFoundError
+
+from src.cluster_explanations import generate_cluster_explanations
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -17,6 +22,49 @@ REQUIRED_COLUMNS = [
     "Cluster",
 ]
 FEATURE_COLUMNS = ["RecencyDays", "Frequency", "Monetary"]
+
+
+@st.cache_data(show_spinner=False)
+def cached_cluster_explanations(
+    profiles_json: str,
+    model: str,
+    api_key: str,
+) -> dict[int, str]:
+    """Generate and cache descriptions for a serialized cluster profile table.
+
+    Args:
+        profiles_json: JSON records containing cluster profile metrics.
+        model: Anthropic model identifier.
+        api_key: Anthropic API key.
+
+    Returns:
+        A mapping from cluster ID to its generated description.
+    """
+    profiles = pd.read_json(profiles_json, orient="records")
+    return generate_cluster_explanations(profiles, api_key=api_key, model=model)
+
+
+def get_anthropic_settings() -> tuple[str | None, str | None]:
+    """Read Anthropic credentials and model settings from Streamlit secrets.
+
+    Returns:
+        The configured API key, if present, and the configured model.
+    """
+    try:
+        config = st.secrets.get("anthropic", {})
+    except StreamlitSecretNotFoundError:
+        return None, None
+    if not isinstance(config, Mapping):
+        return None, None
+
+    api_key = config.get("api_key")
+    model = config.get("model")
+    if not isinstance(model, str) or not model.strip():
+        model = None
+    return (
+        api_key.strip() if isinstance(api_key, str) and api_key.strip() else None,
+        model.strip() if isinstance(model, str) else None,
+    )
 
 
 @st.cache_data(show_spinner=False)
@@ -96,6 +144,39 @@ def main() -> None:
 
     st.caption(f"Data source: `{source_label}`")
 
+    cluster_profiles = (
+        results.groupby("Cluster")
+        .agg(
+            CustomerCount=("CustomerID", "size"),
+            MedianRecencyDays=("RecencyDays", "median"),
+            MedianFrequency=("Frequency", "median"),
+            MedianMonetary=("Monetary", "median"),
+        )
+        .reset_index()
+    )
+    api_key, anthropic_model = get_anthropic_settings()
+    if api_key and anthropic_model:
+        profile_payload = cluster_profiles.to_json(orient="records", double_precision=10)
+        try:
+            with st.spinner("Generating AI cluster explanations..."):
+                explanations = cached_cluster_explanations(
+                    profiles_json=profile_payload,
+                    model=anthropic_model,
+                    api_key=api_key,
+                )
+        except Exception as error:
+            explanations = {}
+            st.warning(
+                "AI cluster explanations are unavailable. The dashboard data is still "
+                f"available. Error type: {type(error).__name__}."
+            )
+    else:
+        explanations = {}
+        st.warning(
+            "AI cluster explanations are unavailable. Configure both the Anthropic "
+            "API key and model in Streamlit secrets to enable them."
+        )
+
     cluster_values = sorted(results["Cluster"].unique().tolist())
     selected_cluster = st.sidebar.selectbox(
         "Cluster",
@@ -122,18 +203,34 @@ def main() -> None:
     )
 
     st.subheader("Customer ID, features, and assigned cluster")
-    st.dataframe(
-        filtered_results[REQUIRED_COLUMNS].sort_values("CustomerID"),
-        width="stretch",
+    st.caption("Hover over a value in the Cluster column to read its AI-generated explanation.")
+    customer_table = filtered_results[REQUIRED_COLUMNS].sort_values("CustomerID").copy()
+    customer_table["ClusterExplanation"] = customer_table["Cluster"].map(explanations).fillna("")
+
+    grid_builder = GridOptionsBuilder.from_dataframe(customer_table)
+    grid_builder.configure_default_column(sortable=True, filter=True, resizable=True)
+    grid_builder.configure_column("CustomerID", header_name="Customer ID")
+    grid_builder.configure_column("RecencyDays", header_name="Recency (days)")
+    grid_builder.configure_column("Frequency", header_name="Distinct invoices")
+    grid_builder.configure_column("Monetary", header_name="Monetary value")
+    grid_builder.configure_column(
+        "Cluster",
+        header_name="Cluster",
+        tooltipField="ClusterExplanation",
+    )
+    grid_builder.configure_column("ClusterExplanation", hide=True)
+    grid_builder.configure_grid_options(
+        tooltipShowDelay=300,
+        tooltipHideDelay=10000,
+        tooltipInteraction=True,
+    )
+    AgGrid(
+        customer_table,
+        gridOptions=grid_builder.build(),
         height=520,
-        hide_index=True,
-        column_config={
-            "CustomerID": st.column_config.NumberColumn("Customer ID", format="%d"),
-            "RecencyDays": st.column_config.NumberColumn("Recency (days)", format="%.2f"),
-            "Frequency": st.column_config.NumberColumn("Distinct invoices", format="%d"),
-            "Monetary": st.column_config.NumberColumn("Monetary value", format="%.2f"),
-            "Cluster": st.column_config.NumberColumn("Cluster", format="%d"),
-        },
+        fit_columns_on_grid_load=True,
+        theme="streamlit",
+        key="customer-cluster-results",
     )
 
     distribution, profiles = st.columns([1, 2])
@@ -149,16 +246,6 @@ def main() -> None:
 
     with profiles:
         st.subheader("Cluster profiles")
-        cluster_profiles = (
-            results.groupby("Cluster")
-            .agg(
-                CustomerCount=("CustomerID", "size"),
-                MedianRecencyDays=("RecencyDays", "median"),
-                MedianFrequency=("Frequency", "median"),
-                MedianMonetary=("Monetary", "median"),
-            )
-            .reset_index()
-        )
         st.dataframe(
             cluster_profiles,
             width="stretch",
